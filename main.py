@@ -6,6 +6,7 @@ from datetime import datetime
 import folium
 from streamlit_folium import st_folium
 from folium.plugins import Draw
+import numpy as np
 
 st.set_page_config(page_title="Cyanobacteria Dashboard", layout="wide")
 st.title("🌊 Cyanobacteria Density Prediction Dashboard")
@@ -62,12 +63,38 @@ if uploaded_file:
     st.write("### 📆 Date Range in Data:")
     st.write(f"From {df['date'].min().date()} to {df['date'].max().date()}")
 
-    # Load LightGBM model
+# Use selected point from map if desired
+if selected_point and st.button("Use this location for prediction"):
+    lat, lon = selected_point
+    current_date = datetime.now().strftime("%Y%m%d")
+    
+    # Create a dataframe for the selected point
+    point_df = pd.DataFrame({
+        'uid': ['map_selection'],
+        'lat': [lat],
+        'lon': [lon],
+        'date': [pd.to_datetime(current_date, format='%Y%m%d')]
+    })
+    
+    # In a real application, you would fetch these values from satellite data
+    # For now, we'll use placeholder values
+    point_df['B2'] = 0.12
+    point_df['B3'] = 0.15
+    point_df['B4'] = 0.20
+    point_df['B8'] = 0.35
+    
+    # Use this instead of the uploaded CSV
+    df = point_df
+    st.write("### Using map selection for prediction:")
+    st.dataframe(df)
+
+# Load LightGBM model
+if df is not None:
     st.markdown("---")
     st.subheader("🤖 Predict Cyanobacteria Density")
     model_file = st.file_uploader("Upload trained LightGBM model (.txt)", type='txt')
 
-    if model_file and 'lat' in df.columns and 'lon' in df.columns:
+    if model_file:
         try:
             model = lgb.Booster(model_file=model_file)
             st.success("Model loaded!")
@@ -75,6 +102,7 @@ if uploaded_file:
             # Check required features in DataFrame
             required_features = ['lat', 'lon', 'B2', 'B3', 'B4', 'B8']
             missing = [f for f in required_features if f not in df.columns]
+            
             if missing:
                 st.warning(f"Missing required features: {', '.join(missing)}")
             else:
@@ -84,17 +112,26 @@ if uploaded_file:
                 st.write("### 📊 Predictions")
                 st.dataframe(df[['uid', 'lat', 'lon', 'date', 'predicted_abun']])
 
-                # Time series plot for selected UID
-                st.write("### 📈 Time Series (Pick a UID)")
-                selected_uid = st.selectbox("Choose sample ID", df['uid'].unique())
-                subset = df[df['uid'] == selected_uid].sort_values('date')
+                # Time series plot for selected UID if multiple entries exist
+                if len(df['uid'].unique()) > 1:
+                    st.write("### 📈 Time Series (Pick a UID)")
+                    selected_uid = st.selectbox("Choose sample ID", df['uid'].unique())
+                    subset = df[df['uid'] == selected_uid].sort_values('date')
 
-                fig, ax = plt.subplots()
-                ax.plot(subset['date'], subset['predicted_abun'], marker='o')
-                ax.set_title(f"Predicted Abundance for {selected_uid}")
-                ax.set_ylabel("Abundance (cells/ml)")
-                ax.set_xlabel("Date")
-                st.pyplot(fig)
+                    fig, ax = plt.subplots()
+                    ax.plot(subset['date'], subset['predicted_abun'], marker='o')
+                    ax.set_title(f"Predicted Abundance for {selected_uid}")
+                    ax.set_ylabel("Abundance (cells/ml)")
+                    ax.set_xlabel("Date")
+                    st.pyplot(fig)
+                else:
+                    # For single point from map selection, show a simple bar chart
+                    if 'predicted_abun' in df.columns:
+                        fig, ax = plt.subplots()
+                        ax.bar(["Selected Location"], df['predicted_abun'])
+                        ax.set_title("Predicted Cyanobacteria Abundance")
+                        ax.set_ylabel("Abundance (cells/ml)")
+                        st.pyplot(fig)
 
                 # Download predictions
                 st.download_button(
@@ -106,4 +143,4 @@ if uploaded_file:
         except Exception as e:
             st.error(f"Failed to load or use model: {e}")
 else:
-    st.info("Please upload a CSV file to begin.")
+    st.info("Please upload a CSV file or select a point on the map to begin.")
