@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import lightgbm as lgb
 import matplotlib.pyplot as plt
-import datetime
+from datetime import datetime
+import folium
 from streamlit_folium import st_folium
 from folium.plugins import Draw
 
@@ -16,15 +17,34 @@ This app will extract band values (manually or pre-loaded), and use a trained Li
 
 # Section 1: Map-based point selector
 st.subheader("🗺️ Choose a Location on the Map")
-map_center = [28.61, 77.21]  # Default location (e.g. Delhi)
-m = leafmap.Map(center=map_center, zoom=4)
-m.add_draw_control()
-m.to_streamlit(height=500)
+map_center = [28.61, 77.21]  # Default location (Delhi)
 
-if m.user_roi:
-    coords = m.user_roi.centroid().coordinates().getInfo()
-    lon, lat = coords
-    st.success(f"Selected point: Latitude: {lat:.4f}, Longitude: {lon:.4f}")
+# Create a Folium map with drawing controls
+m = folium.Map(location=map_center, zoom_start=4)
+draw = Draw(
+    export=False,
+    draw_options={
+        'polyline': False,
+        'polygon': False,
+        'rectangle': False,
+        'circle': False,
+        'circlemarker': False,
+        'marker': True
+    },
+    marker_options={'draggable': True}
+)
+draw.add_to(m)
+
+# Render map in Streamlit and capture drawing
+output = st_folium(m, width=700, height=500)
+
+selected_point = None
+if output and output.get('last_drawn'):
+    geom = output['last_drawn']['geometry']
+    if geom['type'] == 'Point':
+        lon, lat = geom['coordinates']
+        selected_point = (lat, lon)
+        st.success(f"Selected point: Latitude: {lat:.4f}, Longitude: {lon:.4f}")
 
 # Upload CSV
 df = None
@@ -35,31 +55,36 @@ if uploaded_file:
     st.write("### 🔍 Sample Data Preview")
     st.dataframe(df.head())
 
-    if 'date' in df.columns and df['date'].dtype != 'O':
-        df['date'] = pd.to_datetime(df['date'], format='%Y%m%d', errors='coerce')
+    # Parse date column if numeric YYYYMMDD
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'].astype(str), format='%Y%m%d', errors='coerce')
 
     st.write("### 📆 Date Range in Data:")
     st.write(f"From {df['date'].min().date()} to {df['date'].max().date()}")
 
-    # Load model
+    # Load LightGBM model
     st.markdown("---")
     st.subheader("🤖 Predict Cyanobacteria Density")
     model_file = st.file_uploader("Upload trained LightGBM model (.txt)", type='txt')
 
-    if model_file:
+    if model_file and 'lat' in df.columns and 'lon' in df.columns:
         try:
             model = lgb.Booster(model_file=model_file)
             st.success("Model loaded!")
 
+            # Check required features in DataFrame
             required_features = ['lat', 'lon', 'B2', 'B3', 'B4', 'B8']
-            if all(col in df.columns for col in required_features):
+            missing = [f for f in required_features if f not in df.columns]
+            if missing:
+                st.warning(f"Missing required features: {', '.join(missing)}")
+            else:
                 X = df[required_features]
-                predictions = model.predict(X)
-                df['predicted_abun'] = predictions
+                df['predicted_abun'] = model.predict(X)
 
                 st.write("### 📊 Predictions")
                 st.dataframe(df[['uid', 'lat', 'lon', 'date', 'predicted_abun']])
 
+                # Time series plot for selected UID
                 st.write("### 📈 Time Series (Pick a UID)")
                 selected_uid = st.selectbox("Choose sample ID", df['uid'].unique())
                 subset = df[df['uid'] == selected_uid].sort_values('date')
@@ -71,11 +96,13 @@ if uploaded_file:
                 ax.set_xlabel("Date")
                 st.pyplot(fig)
 
-                st.download_button("📥 Download Predictions CSV", df.to_csv(index=False), file_name="cyanobacteria_predictions.csv")
-
-            else:
-                st.warning(f"Missing required features: {', '.join(set(required_features) - set(df.columns))}")
-
+                # Download predictions
+                st.download_button(
+                    "📥 Download Predictions CSV",
+                    df.to_csv(index=False),
+                    file_name="cyanobacteria_predictions.csv",
+                    mime='text/csv'
+                )
         except Exception as e:
             st.error(f"Failed to load or use model: {e}")
 else:
