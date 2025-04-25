@@ -7,9 +7,61 @@ import folium
 from streamlit_folium import st_folium
 from folium.plugins import Draw
 import numpy as np
+import requests
+from io import BytesIO
+import base64
 
 st.set_page_config(page_title="Cyanobacteria Dashboard", layout="wide")
 st.title("🌊 Cyanobacteria Density Prediction Dashboard")
+
+# Helper function to get location information from coordinates
+def get_location_info(lat, lon):
+    """
+    Get location information using reverse geocoding.
+    Returns a dictionary with available location information.
+    """
+    try:
+        # Using OpenStreetMap Nominatim API for reverse geocoding
+        # Note: For production, should use a more robust service with proper API key
+        response = requests.get(
+            f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=10",
+            headers={"User-Agent": "CyanobacteriaDashboard/1.0"}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            info = {
+                "display_name": data.get("display_name", "Unknown location"),
+                "country": data.get("address", {}).get("country", "Unknown"),
+                "state": data.get("address", {}).get("state", 
+                         data.get("address", {}).get("county", "Unknown")),
+                "water_body": "Unknown" # OSM doesn't reliably provide water body names
+            }
+            
+            # Check if location is near water (simplified)
+            address = data.get("address", {})
+            for key in address:
+                if any(water_term in key for water_term in 
+                      ["sea", "ocean", "lake", "river", "water", "bay"]):
+                    info["water_body"] = address[key]
+                    break
+            
+            return info
+        else:
+            return {
+                "display_name": "Location lookup failed",
+                "country": "Unknown",
+                "state": "Unknown",
+                "water_body": "Unknown"
+            }
+    except Exception as e:
+        st.error(f"Error getting location data: {e}")
+        return {
+            "display_name": "Error retrieving location data",
+            "country": "Unknown",
+            "state": "Unknown",
+            "water_body": "Unknown"
+        }
 
 st.markdown("""
 Upload a CSV containing sample points with latitude, longitude, and date.
@@ -44,7 +96,66 @@ if output and output.get('last_drawn'):
     if geom['type'] == 'Point':
         lon, lat = geom['coordinates']
         selected_point = (lat, lon)
+        
+        # Display geographic information
         st.success(f"Selected point: Latitude: {lat:.4f}, Longitude: {lon:.4f}")
+        
+        # Get location information
+        with st.spinner("Fetching location information..."):
+            location_info = get_location_info(lat, lon)
+        
+        # Create expander for more detailed geographic info
+        with st.expander("Geographic Information", expanded=True):
+            st.markdown(f"### 📍 {location_info['display_name']}")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### Coordinates")
+                st.markdown(f"**Decimal Degrees:** {lat:.6f}°, {lon:.6f}°")
+                
+                # Convert to degrees, minutes, seconds
+                lat_deg = int(abs(lat))
+                lat_min = int((abs(lat) - lat_deg) * 60)
+                lat_sec = ((abs(lat) - lat_deg) * 60 - lat_min) * 60
+                lat_dir = "N" if lat >= 0 else "S"
+                
+                lon_deg = int(abs(lon))
+                lon_min = int((abs(lon) - lon_deg) * 60)
+                lon_sec = ((abs(lon) - lon_deg) * 60 - lon_min) * 60
+                lon_dir = "E" if lon >= 0 else "W"
+                
+                st.markdown(f"**DMS:** {lat_deg}° {lat_min}' {lat_sec:.2f}\" {lat_dir}, {lon_deg}° {lon_min}' {lon_sec:.2f}\" {lon_dir}")
+            
+            with col2:
+                st.markdown("#### Region Information")
+                st.markdown(f"* **Country:** {location_info['country']}")
+                st.markdown(f"* **State/Region:** {location_info['state']}")
+                st.markdown(f"* **Nearest Water Body:** {location_info['water_body']}")
+                
+                # Calculate rough estimate of water body type based on location
+                if -60 <= lat <= 60:  # Tropical/temperate regions
+                    if abs(lon) > 150 or abs(lon) < 30:  # Rough estimate for Pacific and Atlantic
+                        water_type = "Ocean (estimated)"
+                    else:
+                        water_type = "Inland/Coastal (estimated)"
+                else:  # Polar regions
+                    water_type = "Polar waters (estimated)"
+                
+                st.markdown(f"* **Water Type:** {water_type}")
+                
+            # Try to get a satellite preview image using Google Static Maps
+            try:
+                # This requires a Google Maps API key for production use
+                # Here we're using a placeholder approach
+                st.markdown("#### Satellite Preview")
+                map_url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=13&size=600x300&maptype=satellite&key=YOUR_API_KEY"
+                st.markdown("*Satellite imagery preview would appear here with a valid API key*")
+                
+                # Create a small embedded map centered on the point
+                preview_map = folium.Map(location=[lat, lon], zoom_start=12, width=600, height=300)
+                folium.Marker([lat, lon], popup="Selected Point").add_to(preview_map)
+                st_folium(preview_map, width=600, height=300)
 
 # Upload CSV
 df = None
@@ -67,6 +178,10 @@ if selected_point and st.button("Use this location for prediction"):
     lat, lon = selected_point
     current_date = datetime.now().strftime("%Y%m%d")
     
+    # Get location information
+    with st.spinner("Getting location data..."):
+        location_info = get_location_info(lat, lon)
+    
     # Create a dataframe for the selected point
     point_df = pd.DataFrame({
         'uid': ['map_selection'],
@@ -76,16 +191,79 @@ if selected_point and st.button("Use this location for prediction"):
     })
     
     # In a real application, you would fetch these values from satellite data
-    # For now, we'll use placeholder values
-    point_df['B2'] = 0.12
-    point_df['B3'] = 0.15
-    point_df['B4'] = 0.20
-    point_df['B8'] = 0.35
+    # For now, we'll use placeholder values or attempt to estimate based on location
+    
+    # Simple example of location-based band value estimation (just for demonstration)
+    # In a real app, you would use satellite imagery APIs or databases
+    water_intensity = 0.15  # Base value
+    
+    # Adjust based on latitude (simplified example)
+    if abs(lat) < 30:  # Tropical regions often have different reflectance
+        water_intensity += 0.05
+    
+    # Adjust based on detected water body type (simplified example)
+    if "ocean" in location_info['water_body'].lower():
+        water_intensity -= 0.02  # Oceans tend to have different spectral properties
+    elif "lake" in location_info['water_body'].lower():
+        water_intensity += 0.03  # Lakes may have different properties
+    
+    # Create synthetic band values - in reality these come from remote sensing
+    point_df['B2'] = water_intensity + 0.02  # Blue band
+    point_df['B3'] = water_intensity         # Green band
+    point_df['B4'] = water_intensity - 0.02  # Red band
+    point_df['B8'] = water_intensity * 2     # NIR band
+    
+    # Add geographic metadata
+    point_df['location_name'] = location_info['display_name']
+    point_df['country'] = location_info['country']
+    point_df['state_region'] = location_info['state']
+    point_df['water_body'] = location_info['water_body']
+    
+    # Calculate water type based on location
+    if -60 <= lat <= 60:  # Tropical/temperate regions
+        if abs(lon) > 150 or abs(lon) < 30:  # Rough estimate for Pacific and Atlantic
+            point_df['water_type'] = "Ocean (estimated)"
+        else:
+            point_df['water_type'] = "Inland/Coastal (estimated)"
+    else:  # Polar regions
+        point_df['water_type'] = "Polar waters (estimated)"
     
     # Use this instead of the uploaded CSV
     df = point_df
-    st.write("### Using map selection for prediction:")
-    st.dataframe(df)
+    
+    # Show the dataframe with detailed information
+    st.write("### 📍 Location Information for Prediction")
+    st.markdown(f"**Selected Location:** {location_info['display_name']}")
+    
+    # Display on two columns
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### Geographic Details")
+        st.markdown(f"* **Coordinates:** {lat:.4f}°, {lon:.4f}°")
+        st.markdown(f"* **Country:** {location_info['country']}")
+        st.markdown(f"* **Region:** {location_info['state']}")
+        st.markdown(f"* **Water Body:** {location_info['water_body']}")
+        st.markdown(f"* **Water Type:** {point_df['water_type'].iloc[0]}")
+    
+    with col2:
+        st.markdown("#### Satellite Data (Synthetic)")
+        st.markdown("*In a production environment, these values would be fetched from actual satellite data:*")
+        
+        spectral_data = pd.DataFrame({
+            'Band': ['B2 (Blue)', 'B3 (Green)', 'B4 (Red)', 'B8 (NIR)'],
+            'Value': [point_df['B2'].iloc[0], point_df['B3'].iloc[0], 
+                      point_df['B4'].iloc[0], point_df['B8'].iloc[0]]
+        })
+        
+        st.dataframe(spectral_data, hide_index=True)
+        
+        # Show small bar chart of band values
+        fig, ax = plt.subplots(figsize=(4, 2))
+        ax.bar(spectral_data['Band'], spectral_data['Value'], color=['blue', 'green', 'red', 'purple'])
+        ax.set_ylabel('Reflectance')
+        ax.set_title('Spectral Band Values')
+        st.pyplot(fig)
 
 # Load LightGBM model
 if df is not None:
