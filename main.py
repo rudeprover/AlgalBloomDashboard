@@ -3,7 +3,7 @@ import pandas as pd
 import lightgbm as lgb
 import matplotlib.pyplot as plt
 import datetime
-import leafmap.foliumap as leafmap
+from leafmap import streamlitmap as leafmap
 
 st.set_page_config(page_title="Cyanobacteria Dashboard", layout="wide")
 st.title("🌊 Cyanobacteria Density Prediction Dashboard")
