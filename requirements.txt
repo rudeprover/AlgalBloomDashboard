@@ -10,3 +10,6 @@ statsmodels>=0.14.4
 lightgbm>=3.3.5         # ✅ For model prediction
 leafmap>=0.17.0         # ✅ For interactive map selection
 geemap>=0.28.0          # Optional if you use Earth Engine later
+# Map drawing
+folium>=0.12.1
+streamlit-folium>=0.11.1
