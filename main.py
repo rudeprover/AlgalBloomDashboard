@@ -3,6 +3,7 @@ import pandas as pd
 import lightgbm as lgb
 import matplotlib.pyplot as plt
 import datetime
+import leafmap.foliumap as leafmap
 
 st.set_page_config(page_title="Cyanobacteria Dashboard", layout="wide")
 st.title("🌊 Cyanobacteria Density Prediction Dashboard")
@@ -11,6 +12,18 @@ st.markdown("""
 Upload a CSV containing sample points with latitude, longitude, and date.
 This app will extract band values (manually or pre-loaded), and use a trained LightGBM model to predict cyanobacteria abundance.
 """)
+
+# Section 1: Map-based point selector
+st.subheader("🗺️ Choose a Location on the Map")
+map_center = [28.61, 77.21]  # Default location (e.g. Delhi)
+m = leafmap.Map(center=map_center, zoom=4)
+m.add_draw_control()
+m.to_streamlit(height=500)
+
+if m.user_roi:
+    coords = m.user_roi.centroid().coordinates().getInfo()
+    lon, lat = coords
+    st.success(f"Selected point: Latitude: {lat:.4f}, Longitude: {lon:.4f}")
 
 # Upload CSV
 df = None
@@ -21,7 +34,6 @@ if uploaded_file:
     st.write("### 🔍 Sample Data Preview")
     st.dataframe(df.head())
 
-    # Optional: Convert date format if needed
     if 'date' in df.columns and df['date'].dtype != 'O':
         df['date'] = pd.to_datetime(df['date'], format='%Y%m%d', errors='coerce')
 
@@ -38,7 +50,6 @@ if uploaded_file:
             model = lgb.Booster(model_file=model_file)
             st.success("Model loaded!")
 
-            # Check required features
             required_features = ['lat', 'lon', 'B2', 'B3', 'B4', 'B8']
             if all(col in df.columns for col in required_features):
                 X = df[required_features]
@@ -48,7 +59,6 @@ if uploaded_file:
                 st.write("### 📊 Predictions")
                 st.dataframe(df[['uid', 'lat', 'lon', 'date', 'predicted_abun']])
 
-                # Plot sample time series
                 st.write("### 📈 Time Series (Pick a UID)")
                 selected_uid = st.selectbox("Choose sample ID", df['uid'].unique())
                 subset = df[df['uid'] == selected_uid].sort_values('date')
@@ -60,7 +70,6 @@ if uploaded_file:
                 ax.set_xlabel("Date")
                 st.pyplot(fig)
 
-                # Option to download
                 st.download_button("📥 Download Predictions CSV", df.to_csv(index=False), file_name="cyanobacteria_predictions.csv")
 
             else:
