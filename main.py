@@ -3,7 +3,8 @@ import pandas as pd
 import lightgbm as lgb
 import matplotlib.pyplot as plt
 import datetime
-from leafmap import streamlitmap as leafmap
+from streamlit_folium import st_folium
+from folium.plugins import Draw
 
 st.set_page_config(page_title="Cyanobacteria Dashboard", layout="wide")
 st.title("🌊 Cyanobacteria Density Prediction Dashboard")
