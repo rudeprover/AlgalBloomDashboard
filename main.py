@@ -31,8 +31,7 @@ draw = Draw(
         'circle': False,
         'circlemarker': False,
         'marker': True
-    },
-    marker_options={'draggable': True}
+    }
 )
 draw.add_to(m)
 
