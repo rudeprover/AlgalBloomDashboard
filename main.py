@@ -145,17 +145,14 @@ if output and output.get('last_drawn'):
                 st.markdown(f"* **Water Type:** {water_type}")
                 
             # Try to get a satellite preview image using Google Static Maps
-            try:
-                # This requires a Google Maps API key for production use
-                # Here we're using a placeholder approach
-                st.markdown("#### Satellite Preview")
-                map_url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=13&size=600x300&maptype=satellite&key=YOUR_API_KEY"
-                st.markdown("*Satellite imagery preview would appear here with a valid API key*")
-                
-                # Create a small embedded map centered on the point
-                preview_map = folium.Map(location=[lat, lon], zoom_start=12, width=600, height=300)
-                folium.Marker([lat, lon], popup="Selected Point").add_to(preview_map)
-                st_folium(preview_map, width=600, height=300)
+            st.markdown("#### Satellite Preview")
+            map_url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=13&size=600x300&maptype=satellite&key=YOUR_API_KEY"
+            st.markdown("*Satellite imagery preview would appear here with a valid API key*")
+            
+            # Create a small embedded map centered on the point
+            preview_map = folium.Map(location=[lat, lon], zoom_start=12, width=600, height=300)
+            folium.Marker([lat, lon], popup="Selected Point").add_to(preview_map)
+            st_folium(preview_map, width=600, height=300, key="preview_map")
 
 # Upload CSV
 df = None
@@ -279,6 +276,7 @@ if df is not None:
     model_file = st.file_uploader("Upload trained LightGBM model (.txt)", type='txt')
 
     if model_file:
+        # Load model safely
         try:
             model = lgb.Booster(model_file=model_file)
             st.success("Model loaded!")
@@ -325,6 +323,6 @@ if df is not None:
                     mime='text/csv'
                 )
         except Exception as e:
-            st.error(f"Failed to load or use model: {e}")
+            st.error(f"Failed to load or use model: {str(e)}")
 else:
     st.info("Please upload a CSV file or select a point on the map to begin.")
