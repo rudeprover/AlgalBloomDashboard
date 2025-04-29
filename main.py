@@ -72,10 +72,6 @@ This app will extract band values (manually or pre-loaded), and use a trained Li
 st.subheader("🗺️ Choose a Location on the Map")
 map_center = [28.61, 77.21]  # Default location (Delhi)
 
-# Initialize variables
-df = None
-selected_point = None
-
 # Create a Folium map with drawing controls
 m = folium.Map(location=map_center, zoom_start=4)
 draw = Draw(
@@ -93,6 +89,8 @@ draw.add_to(m)
 
 # Render map in Streamlit and capture drawing
 output = st_folium(m, width=700, height=500)
+
+selected_point = None
 if output and output.get('last_drawn'):
     geom = output['last_drawn']['geometry']
     if geom['type'] == 'Point':
@@ -158,38 +156,31 @@ if output and output.get('last_drawn'):
                 preview_map = folium.Map(location=[lat, lon], zoom_start=12, width=600, height=300)
                 folium.Marker([lat, lon], popup="Selected Point").add_to(preview_map)
                 st_folium(preview_map, width=600, height=300)
-            except Exception as e:
-                st.warning(f"Unable to display satellite preview: {e}")
 
 # Upload CSV
+df = None
 uploaded_file = st.file_uploader("📂 Upload your sample CSV", type="csv")
 if uploaded_file:
-    try:
-        df = pd.read_csv(uploaded_file)
-        st.success("File uploaded successfully!")
-        st.write("### 🔍 Sample Data Preview")
-        st.dataframe(df.head())
+    df = pd.read_csv(uploaded_file)
+    st.success("File uploaded successfully!")
+    st.write("### 🔍 Sample Data Preview")
+    st.dataframe(df.head())
 
-        # Parse date column if numeric YYYYMMDD
-        if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'].astype(str), format='%Y%m%d', errors='coerce')
+    # Parse date column if numeric YYYYMMDD
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'].astype(str), format='%Y%m%d', errors='coerce')
 
-            # Only show date range if there are valid dates
-            if not df['date'].isna().all():
-                st.write("### 📆 Date Range in Data:")
-                st.write(f"From {df['date'].min().date()} to {df['date'].max().date()}")
-    except Exception as e:
-        st.error(f"Error reading CSV file: {e}")
-        df = None
+    st.write("### 📆 Date Range in Data:")
+    st.write(f"From {df['date'].min().date()} to {df['date'].max().date()}")
 
-# Use selected point from map if desired
-if selected_point and st.button("Use this location for prediction"):
-    lat, lon = selected_point
+# Use selected point from map for prediction
+if 'use_for_prediction' not in st.session_state:
+    st.session_state.use_for_prediction = False
+
+if st.session_state.selected_point and st.session_state.use_for_prediction:
+    lat, lon = st.session_state.selected_point
+    location_info = st.session_state.location_info
     current_date = datetime.now().strftime("%Y%m%d")
-    
-    # Get location information
-    with st.spinner("Getting location data..."):
-        location_info = get_location_info(lat, lon)
     
     # Create a dataframe for the selected point
     point_df = pd.DataFrame({
@@ -211,9 +202,9 @@ if selected_point and st.button("Use this location for prediction"):
         water_intensity += 0.05
     
     # Adjust based on detected water body type (simplified example)
-    if "ocean" in location_info['water_body'].lower():
+    if location_info and "ocean" in location_info['water_body'].lower():
         water_intensity -= 0.02  # Oceans tend to have different spectral properties
-    elif "lake" in location_info['water_body'].lower():
+    elif location_info and "lake" in location_info['water_body'].lower():
         water_intensity += 0.03  # Lakes may have different properties
     
     # Create synthetic band values - in reality these come from remote sensing
@@ -223,10 +214,11 @@ if selected_point and st.button("Use this location for prediction"):
     point_df['B8'] = water_intensity * 2     # NIR band
     
     # Add geographic metadata
-    point_df['location_name'] = location_info['display_name']
-    point_df['country'] = location_info['country']
-    point_df['state_region'] = location_info['state']
-    point_df['water_body'] = location_info['water_body']
+    if location_info:
+        point_df['location_name'] = location_info['display_name']
+        point_df['country'] = location_info['country']
+        point_df['state_region'] = location_info['state']
+        point_df['water_body'] = location_info['water_body']
     
     # Calculate water type based on location
     if -60 <= lat <= 60:  # Tropical/temperate regions
@@ -240,19 +232,25 @@ if selected_point and st.button("Use this location for prediction"):
     # Use this instead of the uploaded CSV
     df = point_df
     
+    # Show a horizontal rule to separate sections
+    st.markdown("---")
+    
     # Show the dataframe with detailed information
     st.write("### 📍 Location Information for Prediction")
-    st.markdown(f"**Selected Location:** {location_info['display_name']}")
     
-    # Display on two columns
+    if location_info:
+        st.markdown(f"**Selected Location:** {location_info['display_name']}")
+    
+    # Display information in two columns
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("#### Geographic Details")
         st.markdown(f"* **Coordinates:** {lat:.4f}°, {lon:.4f}°")
-        st.markdown(f"* **Country:** {location_info['country']}")
-        st.markdown(f"* **Region:** {location_info['state']}")
-        st.markdown(f"* **Water Body:** {location_info['water_body']}")
+        if location_info:
+            st.markdown(f"* **Country:** {location_info['country']}")
+            st.markdown(f"* **Region:** {location_info['state']}")
+            st.markdown(f"* **Water Body:** {location_info['water_body']}")
         st.markdown(f"* **Water Type:** {point_df['water_type'].iloc[0]}")
     
     with col2:
