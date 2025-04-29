@@ -2,48 +2,11 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 from folium.plugins import Draw
-import requests
 
 # Set page config
-st.set_page_config(page_title="Location Explorer", layout="wide")
-st.title("📍 Location Explorer")
-st.markdown("Select a point on the map to see details about that location.")
-
-# Function to get location information
-def get_location_info(lat, lon):
-    """Get location information using OpenStreetMap Nominatim API"""
-    try:
-        response = requests.get(
-            f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=10",
-            headers={"User-Agent": "LocationExplorer/1.0"}
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                "display_name": data.get("display_name", "Unknown location"),
-                "country": data.get("address", {}).get("country", "Unknown"),
-                "state": data.get("address", {}).get("state", 
-                         data.get("address", {}).get("county", "Unknown")),
-                "water_body": next((data.get("address", {}).get(key) for key in data.get("address", {}) 
-                                if any(water_term in key.lower() for water_term in 
-                                ["sea", "ocean", "lake", "river", "water", "bay"])), "Unknown")
-            }
-        else:
-            return {
-                "display_name": "Location lookup failed",
-                "country": "Unknown",
-                "state": "Unknown",
-                "water_body": "Unknown"
-            }
-    except Exception as e:
-        st.error(f"Error getting location data: {e}")
-        return {
-            "display_name": "Error retrieving location data",
-            "country": "Unknown",
-            "state": "Unknown",
-            "water_body": "Unknown"
-        }
+st.set_page_config(page_title="Coordinate Finder", layout="wide")
+st.title("📍 Coordinate Finder")
+st.markdown("Drop a marker on the map to see the exact coordinates.")
 
 # Create a Folium map
 map_center = [20, 0]  # Default center (roughly middle of the world)
@@ -64,7 +27,7 @@ draw = Draw(
 draw.add_to(m)
 
 # Display the map
-st.subheader("🗺️ Click anywhere on the map to select a location")
+st.subheader("🗺️ Click anywhere on the map to drop a marker")
 map_data = st_folium(m, width=800, height=500)
 
 # Check if a point has been selected on the map
@@ -73,26 +36,18 @@ if map_data and map_data.get('last_drawn'):
     if geom['type'] == 'Point':
         lon, lat = geom['coordinates']
         
-        # Show the coordinates
-        st.success(f"Selected coordinates: {lat:.6f}°, {lon:.6f}°")
+        # Show the coordinates in a box
+        st.success(f"Marker dropped at coordinates: Latitude: {lat:.6f}°, Longitude: {lon:.6f}°")
         
-        # Get location information
-        with st.spinner("Fetching location details..."):
-            location_info = get_location_info(lat, lon)
-        
-        # Display location information
-        st.header("📍 Location Details")
-        
-        # Location name
-        st.subheader(location_info['display_name'])
-        
-        # Display information in columns
+        # Display coordinate information in columns
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("### Coordinates")
-            st.markdown(f"**Decimal Degrees:** {lat:.6f}°, {lon:.6f}°")
+            st.markdown("### Decimal Degrees")
+            st.markdown(f"**Latitude:** {lat:.6f}°")
+            st.markdown(f"**Longitude:** {lon:.6f}°")
             
+        with col2:
             # Convert to degrees, minutes, seconds
             lat_deg = int(abs(lat))
             lat_min = int((abs(lat) - lat_deg) * 60)
@@ -104,42 +59,8 @@ if map_data and map_data.get('last_drawn'):
             lon_sec = ((abs(lon) - lon_deg) * 60 - lon_min) * 60
             lon_dir = "E" if lon >= 0 else "W"
             
-            st.markdown(f"**DMS:** {lat_deg}° {lat_min}' {lat_sec:.2f}\" {lat_dir}, {lon_deg}° {lon_min}' {lon_sec:.2f}\" {lon_dir}")
-            
-            # UTM coordinate estimate
-            utm_zone = int((lon + 180) / 6) + 1
-            hemisphere = "Northern" if lat >= 0 else "Southern"
-            st.markdown(f"**Estimated UTM Zone:** {utm_zone} ({hemisphere} Hemisphere)")
-        
-        with col2:
-            st.markdown("### Geographic Information")
-            st.markdown(f"**Country:** {location_info['country']}")
-            st.markdown(f"**State/Region:** {location_info['state']}")
-            
-            # Water body detection
-            if location_info['water_body'] != "Unknown":
-                st.markdown(f"**Nearest Water Body:** {location_info['water_body']}")
-            
-            # Estimated timezone
-            timezone_offset = int(lon / 15)
-            timezone_str = f"UTC{'+' if timezone_offset >= 0 else ''}{timezone_offset}" 
-            st.markdown(f"**Estimated Timezone:** {timezone_str} (approximate)")
-            
-            # Climate zone estimate (very approximate)
-            if abs(lat) < 23.5:
-                climate = "Tropical"
-            elif abs(lat) < 35:
-                climate = "Subtropical"
-            elif abs(lat) < 66.5:
-                climate = "Temperate"
-            else:
-                climate = "Polar"
-            st.markdown(f"**Estimated Climate Zone:** {climate}")
-        
-        # Show a small focused map of the selected location
-        st.markdown("### Location Preview")
-        preview_map = folium.Map(location=[lat, lon], zoom_start=10)
-        folium.Marker([lat, lon], popup=f"{lat:.4f}, {lon:.4f}").add_to(preview_map)
-        st_folium(preview_map, width=800, height=400)
+            st.markdown("### Degrees, Minutes, Seconds")
+            st.markdown(f"**Latitude:** {lat_deg}° {lat_min}' {lat_sec:.2f}\" {lat_dir}")
+            st.markdown(f"**Longitude:** {lon_deg}° {lon_min}' {lon_sec:.2f}\" {lon_dir}")
 else:
-    st.info("👆 Click on the map to select a location and view its details.")
+    st.info("👆 Click on the map to drop a marker and view its coordinates.")
